@@ -1,8 +1,6 @@
 <template>
-  <span style="display: inline-flex; align-items: center; height: 100%;">
+  <span style="display: inline-flex; align-items: center; gap: 7px; height: 100%;">
     <span
-      :title="label"
-      :aria-label="label"
       :style="{
         width: '12px',
         height: '12px',
@@ -13,6 +11,7 @@
         flexShrink: 0,
       }"
     ></span>
+    <span style="font-size: 12px; opacity: 0.8;">{{ label }}</span>
   </span>
 </template>
 
@@ -27,26 +26,25 @@ function norm(v) {
   if (v === null || v === undefined) return null
   if (typeof v === 'number') return v
   const s = String(v).toUpperCase()
-  if (s === 'GREEN')                 return 2
+  if (s === 'GREEN')                   return 2
   if (s === 'AMBER' || s === 'YELLOW') return 1
-  if (s === 'RED')                   return 0
+  if (s === 'RED')                     return 0
   return null
 }
 
 const code = computed(() => norm(props.params.value))
 
-// Inline colours — no scoped CSS so they always apply inside AG Grid cells
 const dotColor = computed(() => {
   if (code.value === 2) return '#2ecc71'  // green
-  if (code.value === 1) return '#f1c40f'  // amber / yellow
+  if (code.value === 1) return '#f1c40f'  // yellow / amber
   if (code.value === 0) return '#e74c3c'  // red
-  return '#bdc3c7'                         // unknown / grey
+  return '#bdc3c7'
 })
 
 const label = computed(() => {
-  if (code.value === 2) return 'Green'
-  if (code.value === 1) return 'Yellow'
-  if (code.value === 0) return 'Red'
-  return 'Unknown'
+  if (code.value === 2) return 'OnTrack'
+  if (code.value === 1) return 'AtRisk'
+  if (code.value === 0) return 'OffTrack'
+  return ''
 })
 </script>

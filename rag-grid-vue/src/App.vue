@@ -30,7 +30,6 @@ const rowData = ref([
   { description: 'Initiative A', textAttr: 'On track',  status: 2 },
   { description: 'Initiative B', textAttr: 'Some risk', status: 1 },
   { description: 'Initiative C', textAttr: 'Blocked',   status: 0 },
-  { description: 'Initiative D', textAttr: 'Unknown',   status: null },
 ])
 
 const columnDefs = ref([
