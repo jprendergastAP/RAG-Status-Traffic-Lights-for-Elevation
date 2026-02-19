@@ -42,9 +42,9 @@ const dotColor = computed(() => {
 })
 
 const label = computed(() => {
-  if (code.value === 2) return 'OnTrack'
-  if (code.value === 1) return 'AtRisk'
-  if (code.value === 0) return 'OffTrack'
+  if (code.value === 2) return 'On Track'
+  if (code.value === 1) return 'At Risk'
+  if (code.value === 0) return 'Off Track'
   return ''
 })
 </script>
