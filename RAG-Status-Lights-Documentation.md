@@ -6,25 +6,91 @@
 
 ## What This Is
 
-A reusable status-light component for AG Grid in Vue 3. Each row in the grid displays a coloured dot with a text label indicating project or initiative health. Built for the Elevation app (Vue 3 frontend, Laravel 10 backend).
+A reusable status-light pattern for AG Grid in Vue 3. Each row in the grid displays a coloured dot indicating project or initiative health. Built for the Elevation app (Vue 3 frontend, Laravel 10 backend).
 
 ---
 
 ## The Three Statuses
 
-| Dot | Colour | Hex | Label |
-|-----|--------|-----|-------|
+| Dot | Colour | Hex | Meaning |
+|-----|--------|-----|---------|
 | 🟢 | Green | `#2ecc71` | On Track |
 | 🟡 | Yellow | `#f1c40f` | At Risk |
 | 🔴 | Red | `#e74c3c` | Off Track |
 
 The `status` field accepts either a **numeric** value (preferred) or a **string**:
 
-| Numeric | String equivalents |
-|---------|-------------------|
-| `2` | `"GREEN"` |
-| `1` | `"AMBER"`, `"YELLOW"` |
-| `0` | `"RED"` |
+| Numeric | String equivalents | Meaning |
+|---------|--------------------|---------|
+| `2` | `"GREEN"` | On Track |
+| `1` | `"AMBER"`, `"YELLOW"` | At Risk |
+| `0` | `"RED"` | Off Track |
+
+The dot is the only visual indicator — no text label is shown in the Status column. The meaning is communicated by colour alone.
+
+---
+
+## Rendering Approach: Why We Use `cellClassRules` + CSS `::before`
+
+This is the most important architectural decision in this implementation and the one developers are most likely to question, so it is worth explaining up front.
+
+### The naive approach (do not use at scale)
+
+The first instinct when building a custom status dot in AG Grid Vue is to write a Vue component and register it as a `cellRenderer`:
+
+```js
+// Looks clean, but expensive at scale
+cellRenderer: MyDotComponent
+```
+
+This works and is easy to understand, but it has a real cost: AG Grid instantiates a full Vue component for every visible cell in the Status column. That means Vue's reactivity system, virtual DOM diffing, and component lifecycle hooks are all running per cell, per render cycle. For a grid with a few dozen rows this is fine. For hundreds or thousands of rows it adds up and you will notice frame drops when sorting, filtering, or scrolling fast.
+
+### The fast approach (what we use)
+
+Instead of a Vue component per cell, we use `cellClassRules` — a native AG Grid feature that simply toggles CSS class names on the cell element based on the cell value. The dot itself is drawn by a CSS `::before` pseudo-element. No Vue component, no extra DOM nodes, no framework overhead whatsoever.
+
+```js
+cellClassRules: {
+  'ryg-cell':   () => true,        // always applied — centres the dot
+  'ryg-red':    (p) => p.value === 0,
+  'ryg-yellow': (p) => p.value === 1,
+  'ryg-green':  (p) => p.value === 2,
+}
+```
+
+```css
+/* The dot is painted entirely by CSS — zero DOM nodes */
+.ryg-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ryg-cell::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.ryg-red::before    { background: #e74c3c; }
+.ryg-yellow::before { background: #f1c40f; }
+.ryg-green::before  { background: #2ecc71; }
+```
+
+When AG Grid virtualises rows (removing off-screen rows from the DOM as the user scrolls), it only needs to toggle a class name on re-entry rather than mount and unmount a Vue component. The browser paints the dot in a single pass with no JavaScript involved at all.
+
+The cell text is deliberately kept empty with `valueFormatter: () => ''`. The `valueGetter` still normalises the raw value to the internal `0/1/2` enum so that sorting and filtering work correctly against the numeric representation regardless of whether the API sends a number or a string.
+
+### Performance comparison
+
+| | Vue `cellRenderer` component | `cellClassRules` + CSS `::before` |
+|---|---|---|
+| DOM nodes per cell | 2–3 (component root + spans) | 0 extra (1 pseudo-element) |
+| Framework work per cell | Vue instantiation + reactivity | None |
+| Virtualisation cost | Mount/unmount component | Toggle a CSS class |
+| Suitable for | Up to ~500 rows comfortably | Thousands of rows |
 
 ---
 
@@ -33,12 +99,13 @@ The `status` field accepts either a **numeric** value (preferred) or a **string*
 ```
 rag-grid-vue/
 ├── src/
-│   ├── main.js               # App entry point + AG Grid CSS imports
-│   ├── App.vue               # Grid definition, row data, column defs
-│   └── RagDotRenderer.vue    # Vue cell renderer component
-├── vite.config.js            # Vite config with single-file build plugin
+│   ├── main.js        # App entry point + AG Grid CSS imports
+│   └── App.vue        # Grid definition, column defs, status CSS
+├── vite.config.js     # Vite config with single-file build plugin
 └── package.json
 ```
+
+There is no separate cell renderer component file. The entire status dot is handled inside `App.vue` via `cellClassRules` and CSS.
 
 ---
 
@@ -93,7 +160,7 @@ npm run build
 
 ---
 
-## Source Files
+## Complete Source
 
 ### `src/main.js`
 
@@ -113,13 +180,13 @@ createApp(App).mount('#app')
 
 ### `src/App.vue`
 
-Defines the grid, columns, and sample row data. The `RagDotRenderer` Vue component is passed directly to `cellRenderer`.
+The complete implementation. All rendering logic lives in the column definition and the `<style>` block — no external component file needed.
 
 ```vue
 <template>
   <div class="page">
     <div class="toolbar">
-      <div class="pill">Vue 3 + AG Grid, Status lights</div>
+      <div class="pill">AG Grid Vue 3, RYG status dots, fast</div>
       <button class="btn" @click="randomizeStatuses">Randomize</button>
     </div>
 
@@ -129,7 +196,9 @@ Defines the grid, columns, and sample row data. The `RagDotRenderer` Vue compone
       :columnDefs="columnDefs"
       :defaultColDef="defaultColDef"
       :modules="modules"
-      :animateRows="true"
+      :animateRows="false"
+      :rowBuffer="50"
+      :suppressColumnVirtualisation="false"
     />
   </div>
 </template>
@@ -138,138 +207,134 @@ Defines the grid, columns, and sample row data. The `RagDotRenderer` Vue compone
 import { ref } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
 import { AllCommunityModule } from 'ag-grid-community'
-import RagDotRenderer from './RagDotRenderer.vue'
 
-// AG Grid v31+ requires modules to be declared — without this the grid is blank
+// Required for AG Grid v31+ — without this the grid renders blank
 const modules = [AllCommunityModule]
 
-// Numeric enum: 0=RED, 1=YELLOW/AMBER, 2=GREEN
+/*
+STRICT ENUM
+0 = RED    (Off Track)
+1 = YELLOW (At Risk)
+2 = GREEN  (On Track)
+*/
+
 const rowData = ref([
   { description: 'Initiative A', textAttr: 'On track',  status: 2 },
-  { description: 'Initiative B', textAttr: 'Some risk', status: 1 },
+  { description: 'Initiative B', textAttr: 'At risk',   status: 1 },
   { description: 'Initiative C', textAttr: 'Blocked',   status: 0 },
+  { description: 'Initiative D', textAttr: 'On track',  status: 2 },
+  { description: 'Initiative E', textAttr: 'At risk',   status: 1 },
 ])
+
+// Accepts numeric (0/1/2) or string ("RED"/"YELLOW"/"GREEN") from the API
+function toStatusCode(v) {
+  if (v === 0 || v === 'RED')    return 0
+  if (v === 1 || v === 'YELLOW') return 1
+  if (v === 2 || v === 'GREEN')  return 2
+  return null
+}
 
 const columnDefs = ref([
   { headerName: 'Description', field: 'description', flex: 2, minWidth: 220 },
   { headerName: 'Text',        field: 'textAttr',    flex: 2, minWidth: 220 },
+
+  // Dot-only status column — no text, no Vue component, no extra DOM nodes
   {
     headerName: 'Status',
     field: 'status',
-    width: 140,
+    width: 80,
     sortable: true,
     filter: true,
-    cellRenderer: RagDotRenderer,
+    valueGetter:    (p) => toStatusCode(p.data?.status),
+    valueFormatter: () => '',   // cell text empty — dot drawn by CSS ::before
+    cellClassRules: {
+      'ryg-cell':   () => true,
+      'ryg-red':    (p) => p.value === 0,
+      'ryg-yellow': (p) => p.value === 1,
+      'ryg-green':  (p) => p.value === 2,
+    },
   },
 ])
 
-const defaultColDef = ref({ resizable: true })
+const defaultColDef = {
+  resizable: true,
+}
 
 function randomizeStatuses() {
-  const options = [0, 1, 2]
-  rowData.value = rowData.value.map(r => ({
-    ...r,
-    status: options[Math.floor(Math.random() * options.length)],
+  const values = [0, 1, 2]
+  rowData.value = rowData.value.map((row) => ({
+    ...row,
+    status: values[Math.floor(Math.random() * values.length)],
   }))
 }
 </script>
 
 <style>
 .page {
+  padding: 20px;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  padding: 16px;
 }
+
 .toolbar {
+  margin-bottom: 10px;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 12px;
 }
+
 .pill {
-  padding: 6px 10px;
-  border-radius: 999px;
   background: #f3f4f6;
+  padding: 6px 12px;
+  border-radius: 999px;
   font-size: 13px;
 }
+
 .btn {
-  padding: 8px 10px;
+  padding: 6px 12px;
+  cursor: pointer;
   border-radius: 10px;
   border: 1px solid #ddd;
   background: white;
-  cursor: pointer;
 }
+
 .btn:hover { background: #f9fafb; }
+
 .grid {
-  height: 360px;
+  height: 420px;
   width: 900px;
 }
-</style>
-```
 
----
+/* -------------------------------------------------------
+   STATUS DOT — dot only, no text
+   Rendered via CSS ::before pseudo-element.
+   No extra DOM nodes. AG Grid only toggles a class name.
+   ------------------------------------------------------- */
 
-### `src/RagDotRenderer.vue`
-
-The Vue component that renders the coloured dot and text label inside each Status cell.
-
-```vue
-<template>
-  <span style="display: inline-flex; align-items: center; gap: 7px; height: 100%;">
-    <span
-      :style="{
-        width: '12px',
-        height: '12px',
-        borderRadius: '50%',
-        display: 'inline-block',
-        background: dotColor,
-        boxShadow: '0 0 0 1px rgba(0,0,0,0.15)',
-        flexShrink: 0,
-      }"
-    ></span>
-    <span style="font-size: 12px; opacity: 0.8;">{{ label }}</span>
-  </span>
-</template>
-
-<script setup>
-import { computed } from 'vue'
-
-const props = defineProps({
-  params: { type: Object, required: true },
-})
-
-function norm(v) {
-  if (v === null || v === undefined) return null
-  if (typeof v === 'number') return v
-  const s = String(v).toUpperCase()
-  if (s === 'GREEN')                   return 2
-  if (s === 'AMBER' || s === 'YELLOW') return 1
-  if (s === 'RED')                     return 0
-  return null
+.ryg-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-const code = computed(() => norm(props.params.value))
+.ryg-cell::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
 
-const dotColor = computed(() => {
-  if (code.value === 2) return '#2ecc71'  // green
-  if (code.value === 1) return '#f1c40f'  // yellow / amber
-  if (code.value === 0) return '#e74c3c'  // red
-  return '#bdc3c7'
-})
-
-const label = computed(() => {
-  if (code.value === 2) return 'On Track'
-  if (code.value === 1) return 'At Risk'
-  if (code.value === 0) return 'Off Track'
-  return ''
-})
-</script>
+.ryg-red::before    { background: #e74c3c; }
+.ryg-yellow::before { background: #f1c40f; }
+.ryg-green::before  { background: #2ecc71; }
+</style>
 ```
 
 ---
 
 ### `vite.config.js`
 
-The `viteSingleFile` plugin inlines all JS and CSS into a single `index.html`, which is needed when opening the build directly from the filesystem (no local server required).
+The `viteSingleFile` plugin inlines all JS and CSS into one `index.html`. This is only needed for the preview build — in Elevation the normal Vite build pipeline applies.
 
 ```js
 import { defineConfig } from 'vite'
@@ -288,37 +353,35 @@ export default defineConfig({
 
 ### AG Grid v31+ requires explicit module registration
 
-From AG Grid v31 onwards, every grid feature is opt-in. Without registering `AllCommunityModule`, the grid mounts but renders a completely blank box — no columns, no rows, no error.
+From AG Grid v31 onwards, every grid feature is opt-in. Without registering `AllCommunityModule`, the grid mounts but renders a completely blank box — no columns, no rows, no error in the console.
 
 ```js
 import { AllCommunityModule } from 'ag-grid-community'
-// ...
+
 const modules = [AllCommunityModule]
 // passed as :modules="modules" on <AgGridVue>
 ```
 
 ### `frameworkComponents` was removed in AG Grid v28
 
-The tutorial code in many articles still references `frameworkComponents` for registering Vue cell renderers. This API was removed in v28. In v35, pass the component object directly:
+Many tutorials and older articles still reference `frameworkComponents` for registering Vue cell renderers. This API was removed in v28. In v35, if you do use a component renderer, pass the imported object directly:
 
 ```js
-// Old (broken in v35)
+// Old — broken in v35
 cellRenderer: 'RagDotRenderer',
 frameworkComponents: { RagDotRenderer }
 
 // Correct for v35
-cellRenderer: RagDotRenderer   // the imported component object
+cellRenderer: RagDotRenderer
 ```
 
-### Do not use `<style scoped>` in cell renderer components
+### Do not use `<style scoped>` inside cell renderer components
 
-AG Grid mounts Vue cell renderer components in its own DOM context. Scoped CSS generates a unique `data-v-xxxxxxxx` attribute that Vue expects to match on its own rendered elements — but AG Grid's mount point sits outside that scope, so the styles are silently ignored and the dot renders invisible.
+AG Grid mounts Vue cell renderer components outside the parent component's scope. Scoped CSS generates a `data-v-xxxxxxxx` attribute that only matches elements rendered by that exact component instance — AG Grid's cell mount point does not carry that attribute, so scoped styles are silently ignored. Use inline `:style` bindings if you ever do need a component renderer.
 
-The fix is to use inline `:style` bindings instead of scoped CSS classes.
+### Vite builds use `type="module"` scripts, which fail over `file://`
 
-### Vite builds use `type="module"` scripts, which block over `file://`
-
-A standard `npm run build` produces an `index.html` that loads JavaScript as ES modules. Browsers block cross-origin ES module loading over the `file://` protocol, so double-clicking the built file shows a blank page. Two ways around this: run a local HTTP server (`python -m http.server`), or use `vite-plugin-singlefile` to inline everything into one self-contained file.
+A standard `npm run build` produces an `index.html` that loads JavaScript as ES modules. Browsers block ES module loading over the `file://` protocol, so double-clicking the built file shows a blank page. Two solutions: run a local HTTP server (`python -m http.server`), or use `vite-plugin-singlefile` to inline everything into one file.
 
 ---
 
@@ -326,10 +389,10 @@ A standard `npm run build` produces an `index.html` that loads JavaScript as ES 
 
 When wiring this into the Elevation codebase (Vue 3, Laravel 10):
 
-1. Copy `RagDotRenderer.vue` into the relevant Elevation component folder.
-2. Import and register `AllCommunityModule` wherever your AG Grid instance is set up (if not already done globally).
-3. Set `cellRenderer: RagDotRenderer` on the Status column definition.
-4. Map your API response field to the `status` column. The renderer accepts numeric (`0/1/2`) or string (`RED/AMBER/GREEN`) values. A Laravel API Resource can emit either format.
+1. Import `AllCommunityModule` and add it to the `:modules` prop wherever the AG Grid instance is defined — or register it globally once at app startup.
+2. Add `valueGetter`, `valueFormatter`, and `cellClassRules` to the Status column definition exactly as shown in `App.vue` above.
+3. Add the `.ryg-*` CSS rules to the relevant component's `<style>` block. Do not use `scoped` — AG Grid cells sit outside the component's scope boundary, so scoped styles will not reach them.
+4. Map your Laravel API response field to the `status` column. `toStatusCode()` handles both numeric and string inputs, so a Laravel API Resource can return either format without any changes to the frontend.
 
 ---
 

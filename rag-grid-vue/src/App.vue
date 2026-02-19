@@ -28,9 +28,9 @@ const modules = [AllCommunityModule]
 
 /*
 STRICT ENUM
-0 = RED   → Off Track
-1 = YELLOW → At Risk
-2 = GREEN  → On Track
+0 = RED    (Off Track)
+1 = YELLOW (At Risk)
+2 = GREEN  (On Track)
 */
 
 const rowData = ref([
@@ -41,6 +41,7 @@ const rowData = ref([
   { description: 'Initiative E', textAttr: 'At risk',   status: 1 },
 ])
 
+// Accepts numeric (0/1/2) or string ("RED"/"YELLOW"/"GREEN") from the API
 function toStatusCode(v) {
   if (v === 0 || v === 'RED')    return 0
   if (v === 1 || v === 'YELLOW') return 1
@@ -48,32 +49,19 @@ function toStatusCode(v) {
   return null
 }
 
-function toStatusLabel(code) {
-  if (code === 2) return 'On Track'
-  if (code === 1) return 'At Risk'
-  if (code === 0) return 'Off Track'
-  return ''
-}
-
 const columnDefs = ref([
   { headerName: 'Description', field: 'description', flex: 2, minWidth: 220 },
   { headerName: 'Text',        field: 'textAttr',    flex: 2, minWidth: 220 },
 
-  // Ultra-fast status dot: no framework renderer, no extra DOM nodes
+  // Dot-only status column — no text, no Vue component, no extra DOM nodes
   {
     headerName: 'Status',
     field: 'status',
-    width: 140,
+    width: 80,
     sortable: true,
     filter: true,
-
-    // Normalize to 0/1/2 even if backend sends strings
-    valueGetter: (p) => toStatusCode(p.data?.status),
-
-    // Dot drawn via CSS ::before; label text from the cell value
-    valueFormatter: (p) => toStatusLabel(p.value),
-
-    // Add CSS classes based on the normalized value
+    valueGetter:    (p) => toStatusCode(p.data?.status),
+    valueFormatter: () => '',   // cell text empty — dot is drawn by CSS ::before
     cellClassRules: {
       'ryg-cell':   () => true,
       'ryg-red':    (p) => p.value === 0,
@@ -124,26 +112,27 @@ function randomizeStatuses() {
   background: white;
 }
 
-.btn:hover {
-  background: #f9fafb;
-}
+.btn:hover { background: #f9fafb; }
 
 .grid {
   height: 420px;
   width: 900px;
 }
 
-/* FAST STATUS DOT — rendered via CSS pseudo-element, no extra DOM nodes */
+/* -------------------------------------------------------
+   STATUS DOT — dot only, no text
+   Rendered via CSS ::before pseudo-element.
+   No extra DOM nodes. AG Grid only toggles a class name.
+   ------------------------------------------------------- */
 
 .ryg-cell {
   display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
 }
 
 .ryg-cell::before {
   content: "";
-  flex-shrink: 0;
   width: 12px;
   height: 12px;
   border-radius: 999px;
