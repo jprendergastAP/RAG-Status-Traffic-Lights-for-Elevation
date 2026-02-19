@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vue 3 + AG Grid, RAG Status Lights</title>
+
+    <!-- AG Grid styles (match version with JS version) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@35.1.0/styles/ag-grid.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@35.1.0/styles/ag-theme-quartz.css" />
+
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        margin: 20px;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .pill {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #f3f4f6;
+        font-size: 13px;
+      }
+
+      /* The RAG dot */
+      .rag-dot {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        vertical-align: middle;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+      }
+      .rag-green { background: #2ecc71; }
+      .rag-amber { background: #f1c40f; }
+      .rag-red { background: #e74c3c; }
+      .rag-unknown { background: #bdc3c7; }
+
+      .status-cell {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* If you want only the dot, remove this */
+      .status-label {
+        font-size: 12px;
+        opacity: 0.75;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app">
+      <div class="toolbar">
+        <div class="pill">Vue 3 + AG Grid, Status lights</div>
+        <button @click="randomizeStatuses">Randomize statuses</button>
+      </div>
+
+      <div id="myGrid" class="ag-theme-quartz" style="height: 360px; width: 900px;"></div>
+    </div>
+
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <!-- AG Grid Community -->
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@35.1.0/dist/ag-grid-community.min.js"></script>
+
+    <script>
+      const { createApp, ref, onMounted } = Vue;
+
+      createApp({
+        setup() {
+          const rowData = ref([
+            { description: "Initiative A", textAttr: "On track", status: "GREEN" },
+            { description: "Initiative B", textAttr: "Some risk", status: "AMBER" },
+            { description: "Initiative C", textAttr: "Blocked", status: "RED" },
+            { description: "Initiative D", textAttr: "Unknown state", status: "" }
+          ]);
+
+          const gridApi = ref(null);
+
+          const columnDefs = [
+            { headerName: "Description", field: "description", flex: 2, minWidth: 220 },
+            { headerName: "Text", field: "textAttr", flex: 2, minWidth: 220 },
+            {
+              headerName: "Status",
+              field: "status",
+              width: 140,
+              sortable: true,
+              filter: true,
+              cellRenderer: (params) => {
+                const v = (params.value || "").toString().toUpperCase();
+
+                const cls =
+                  v === "GREEN" ? "rag-dot rag-green" :
+                  (v === "AMBER" || v === "YELLOW") ? "rag-dot rag-amber" :
+                  v === "RED" ? "rag-dot rag-red" :
+                  "rag-dot rag-unknown";
+
+                // If you want ONLY the dot, remove the span with status-label
+                const label = v || "UNKNOWN";
+                return `
+                  <span class="status-cell" title="${label}" aria-label="${label}">
+                    <span class="${cls}"></span>
+                    <span class="status-label">${label}</span>
+                  </span>
+                `;
+              }
+            }
+          ];
+
+          const gridOptions = {
+            columnDefs,
+            rowData: rowData.value,
+            animateRows: true,
+            defaultColDef: {
+              resizable: true
+            }
+          };
+
+          function randomizeStatuses() {
+            const options = ["GREEN", "AMBER", "RED"];
+            rowData.value = rowData.value.map(r => ({
+              ...r,
+              status: options[Math.floor(Math.random() * options.length)]
+            }));
+
+            if (gridApi.value) {
+              gridApi.value.setGridOption("rowData", rowData.value);
+            }
+          }
+
+          onMounted(() => {
+            const gridDiv = document.getElementById("myGrid");
+            const grid = agGrid.createGrid(gridDiv, gridOptions);
+            gridApi.value = grid;
+          });
+
+          return { randomizeStatuses };
+        }
+      }).mount("#app");
+    </script>
+  </body>
+</html>
